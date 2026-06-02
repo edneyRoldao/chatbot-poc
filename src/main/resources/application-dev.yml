@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://192.168.68.53:5432/chatbot_poc
+    username: postgres
+    password: postgres
+  jpa:
+    show-sql: true
+  data:
+    redis:
+      host: 192.168.68.53
+      port: 6379
+
+app:
+  telegram:
+    bot-token: ${TELEGRAN_BOT_TOKEN}
+    bot-username: ${TELEGRAN_BOT_NAME}
+  ai:
+    api-key: ${GROQ_API_KEY}
+    base-url: https://api.groq.com/openai/v1
