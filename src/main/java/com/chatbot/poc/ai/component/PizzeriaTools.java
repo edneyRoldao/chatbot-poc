@@ -1,45 +1,47 @@
 package com.chatbot.poc.ai.component;
 
-import com.chatbot.poc.menu.service.MenuService;
+import com.chatbot.poc.conversation.domain.ConversationSession;
+import com.chatbot.poc.conversation.domain.ConversationState;
+import com.chatbot.poc.order.dto.OrderCreateRequest;
+import com.chatbot.poc.order.dto.OrderItemInput;
+import com.chatbot.poc.order.dto.OrderResponse;
+import com.chatbot.poc.order.service.OrderService;
+import com.chatbot.poc.shared.component.ConversationContext;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 @Component
 public class PizzeriaTools {
 
-    private static final Logger log = LoggerFactory.getLogger(PizzeriaTools.class);
+    private final OrderService orderService;
+    private final ConversationContext conversationContext;
 
-    private final MenuService menuService;
-
-    PizzeriaTools(MenuService menuService) {
-        this.menuService = menuService;
+    PizzeriaTools(OrderService orderService, ConversationContext conversationContext) {
+        this.orderService = orderService;
+        this.conversationContext = conversationContext;
     }
 
-    @Tool("Retrieves the complete menu text. You MUST paste the entire returned text verbatim into your reply — the customer sees only your text, not the tool output.")
-    public String getMenu() {
-        log.info("Tool called: getMenu()");
-        return "INCLUDE THIS ENTIRE TEXT VERBATIM IN YOUR RESPONSE TO THE CUSTOMER:\n\n"
-                + menuService.getMenuAsText()
-                + "\n\nAfter showing the menu, ask what they would like to order.";
-    }
-
-    @Tool("Places an order for the customer after their explicit confirmation")
+    @Tool("Places a single order containing all items the customer confirmed. Always call this once with the complete list — never call it multiple times for the same order.")
     public String placeOrder(
-            @P("Pizza name exactly as shown in the menu") String pizzaName,
-            @P("Size: SMALL, MEDIUM, or LARGE") String size,
-            @P("Quantity") int quantity
+            @P("All items in the order. Each item: pizzaName (exactly as in the menu), pizzaSize (SMALL, MEDIUM, or LARGE), quantity (plain integer, never a quoted string)") List<OrderItemInput> items
     ) {
-        long orderNumber = System.currentTimeMillis() % 100000;
-        return "Pedido #" + orderNumber + " registrado com sucesso! "
-                + quantity + "x " + pizzaName + " (" + size + ") "
-                + "chegará em 35 a 45 minutos. Obrigado por escolher a Pizzaria do João!";
+        ConversationSession session = conversationContext.get();
+        OrderCreateRequest request = new OrderCreateRequest(
+                session.getSessionId(), session.getProviderName(), items);
+        OrderResponse response = orderService.placeOrder(request);
+        session.setState(ConversationState.ORDER_PLACED);
+        return response.confirmationMessage();
     }
 
     @Tool("Cancels the current order in progress and resets the conversation")
     public String cancelOrder() {
+        ConversationSession session = conversationContext.get();
+        if (session != null) {
+            orderService.cancelOrder(session.getSessionId());
+        }
         return "Pedido cancelado com sucesso. Como mais posso te ajudar?";
     }
 }

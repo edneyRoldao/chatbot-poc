@@ -7,6 +7,8 @@ import com.chatbot.poc.conversation.service.ConversationService;
 import com.chatbot.poc.messaging.domain.InboundMessage;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+
 @Service
 class ConversationServiceImpl implements ConversationService {
 
@@ -22,6 +24,7 @@ class ConversationServiceImpl implements ConversationService {
     public String handle(InboundMessage message) {
         ConversationSession session = loadOrCreateSession(message);
         String reply = aiOrchestrator.chat(session, message.text());
+        session.setUpdatedAt(Instant.now());
         conversationRepository.save(session);
         return reply;
     }

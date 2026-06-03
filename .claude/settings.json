@@ -11,6 +11,17 @@
     ]
   },
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"\nimport sys, json\ndata = json.load(sys.stdin)\nprompt = data.get('prompt', '').lower()\nkeywords = ['run', 'start', 'rodar', 'subir', 'iniciar', 'test', 'testar', 'restart', 'executar']\nif any(k in prompt for k in keywords):\n    print(json.dumps({'hookSpecificOutput': {'hookEventName': 'UserPromptSubmit', 'additionalContext': 'Use the start-chatbot-poc skill for launching this app (env vars and mvn command are in the skill).'}}))\"",
+            "statusMessage": "Checking for startup context..."
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write",

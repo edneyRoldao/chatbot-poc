@@ -3,6 +3,8 @@ package com.chatbot.poc.ai.service.impl;
 import com.chatbot.poc.ai.component.PizzeriaTools;
 import com.chatbot.poc.ai.service.AiOrchestrator;
 import com.chatbot.poc.conversation.domain.ConversationSession;
+import com.chatbot.poc.menu.service.MenuService;
+import com.chatbot.poc.shared.component.ConversationContext;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
@@ -11,6 +13,7 @@ import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.SystemMessage;
+import dev.langchain4j.service.V;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,36 +24,48 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 @Service
 class GroqAiOrchestrator implements AiOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(GroqAiOrchestrator.class);
+    private static final Pattern FUNCTION_CALL_PATTERN =
+            Pattern.compile("<function=[^>]+>.*?</function>", Pattern.DOTALL);
 
     private final OpenAiChatModel chatModel;
     private final PizzeriaTools pizzeriaTools;
+    private final MenuService menuService;
+    private final ConversationContext conversationContext;
     private final int maxHistoryTurns;
 
     GroqAiOrchestrator(
             OpenAiChatModel chatModel,
             PizzeriaTools pizzeriaTools,
+            MenuService menuService,
+            ConversationContext conversationContext,
             @Value("${app.ai.max-history-turns}") int maxHistoryTurns) {
         this.chatModel = chatModel;
         this.pizzeriaTools = pizzeriaTools;
+        this.menuService = menuService;
+        this.conversationContext = conversationContext;
         this.maxHistoryTurns = maxHistoryTurns;
     }
 
     @Override
     public String chat(ConversationSession session, String userMessage) {
+        conversationContext.set(session);
         try {
             ChatMemory memory = buildMemoryForSession(session);
             PizzeriaAssistant assistant = buildAssistant(memory);
-            String response = assistant.chat(userMessage);
+            String response = assistant.chat(userMessage, menuService.getMenuAsText());
             updateSessionHistory(session, memory.messages());
             return response;
         } catch (Exception e) {
             log.error("AI call failed for session [{}]", session.getSessionId(), e);
             return "Desculpe, estou com dificuldades técnicas no momento. Tente novamente em instantes.";
+        } finally {
+            conversationContext.clear();
         }
     }
 
@@ -102,10 +117,13 @@ class GroqAiOrchestrator implements AiOrchestrator {
                     history.add(entry);
                 }
             } else if (message instanceof AiMessage aiMsg && StringUtils.isNotBlank(aiMsg.text())) {
-                Map<String, String> entry = new HashMap<>();
-                entry.put("role", "assistant");
-                entry.put("content", aiMsg.text());
-                history.add(entry);
+                String content = sanitizeFunctionCallMarkup(aiMsg.text());
+                if (StringUtils.isNotBlank(content)) {
+                    Map<String, String> entry = new HashMap<>();
+                    entry.put("role", "assistant");
+                    entry.put("content", content);
+                    history.add(entry);
+                }
             }
         }
         session.setHistory(history);
@@ -115,8 +133,13 @@ class GroqAiOrchestrator implements AiOrchestrator {
         return userMessage.singleText();
     }
 
+    private String sanitizeFunctionCallMarkup(String text) {
+        return FUNCTION_CALL_PATTERN.matcher(text).replaceAll("").trim();
+    }
+
     private interface PizzeriaAssistant {
         @SystemMessage(fromResource = "prompts/system-prompt.txt")
-        String chat(String userMessage);
+        String chat(@dev.langchain4j.service.UserMessage String userMessage, @V("menu") String menu);
     }
+
 }
